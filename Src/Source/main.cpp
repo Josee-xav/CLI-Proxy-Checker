@@ -22,7 +22,7 @@ std::string buffer; // string used by writer function to save cURL
 * The size of the data pointed to by char* data is size multiplied with size_t nmemb, it will not be zero terminated.
 * Return the number of bytes actually taken care of.
 * If that amount differs from the amount passed to your function, it'll signal an error to the library.
-* This will abort the transferand return CURLE_WRITE_ERROR.
+* This will exit the transferand return CURLE_WRITE_ERROR.
 */
 static int writer(char* data, size_t size, size_t nmemb, std::string* buffer) {
 	unsigned int result = 0;
@@ -49,7 +49,7 @@ std::string checkProxyConnection(std::string ip, int port, std::string proxytype
 		if (curlHandle) {
 			curl_easy_setopt(curlHandle, CURLOPT_URL, "https://www.google.com");
 			curl_easy_setopt(curlHandle, CURLOPT_FOLLOWLOCATION, true);
-			curl_easy_setopt(curlHandle, CURLOPT_TIMEOUT, 15L);
+			curl_easy_setopt(curlHandle, CURLOPT_TIMEOUT, 12L);
 			curl_easy_setopt(curlHandle, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:69.0) Gecko/20100101 Firefox/69.0");
 
 			// sets the proxyType
@@ -63,8 +63,6 @@ std::string checkProxyConnection(std::string ip, int port, std::string proxytype
 				curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS4A);
 			else if (proxytype == "socks5")
 				curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
-			else
-				return "Didnt select proper proxytype. type one of these :: http, https, socks4, socks4a, socks5";
 
 			curl_easy_setopt(curlHandle, CURLOPT_PROXY, ip.c_str());
 			curl_easy_setopt(curlHandle, CURLOPT_PROXYPORT, port);
@@ -74,10 +72,8 @@ std::string checkProxyConnection(std::string ip, int port, std::string proxytype
 			curlResponse = curl_easy_perform(curlHandle); // will perform the transfer as described in all of the options above
 			curl_easy_cleanup(curlHandle);
 
-
 			if (curlResponse != CURLE_OPERATION_TIMEDOUT) {
 				if (curlResponse == CURLE_OK) {
-
 					if (sizeof(buffer) > 0) {// receviced data thats greater than 0. meaning that the connection went though
 						return  ip + " : " + std::to_string(port) + " worked!";
 					}
@@ -88,7 +84,9 @@ std::string checkProxyConnection(std::string ip, int port, std::string proxytype
 			}
 		}
 		else {
-			return "The Curl handle Failed!";
+			std::cout << "The Curl handle Failed! Press a letter to exit\n"; // error
+			std::cin.get();
+			exit(1);
 		}
 
 	}
@@ -113,8 +111,8 @@ void readTextFile(std::string p_fileName, int& p_amountOfIps, std::vector<std::s
 
 	// If we couldn't open the output file stream for reading
 	if (!rFile) {
-		std::cout << "Uh oh, File: " << p_fileName << " could not be opened for reading!" << std::endl;
-		Sleep(2000);
+		std::cerr << "Uh oh, File: " << p_fileName << " could not be opened for reading! Press a letter to exit" << std::endl;
+		std::cin.get();
 		exit(1);
 	}
 
@@ -139,9 +137,9 @@ void readTextFile(std::string p_fileName, int& p_amountOfIps, std::vector<std::s
 				}
 			}
 			else {
-				std::cerr << "Error File fomatting aint right. To fix this\n";
-				std::cerr << "You need to make sure each line has formatting like this example: 1.1.1.1.1:6666\n";
-				Sleep(2000);
+				std::cout << "Error File fomatting aint right. To fix this\n";
+				std::cout << "You need to make sure each line has formatting like this example: 1.1.1.1.1:6666.... Press a letter to exit\n";
+				std::cin.get();
 				exit(1);
 			}
 
@@ -152,8 +150,8 @@ void readTextFile(std::string p_fileName, int& p_amountOfIps, std::vector<std::s
 				portt = std::stoi(bufferPort); // converts the string that contains the port
 			}
 			catch (std::invalid_argument) { // this exception may happen if you have formatted ur file wrong. like an empty line in ur txt file
-				std::cerr << "You probably have a empty line in your proxy list file. please remove it before using this.\n";
-				Sleep(2000);
+				std::cout << "You probably have a empty line in your proxy list file. please remove it before using this. Press a letter to exit\n";
+				std::cin.get();
 				exit(1);
 			}
 
@@ -177,13 +175,16 @@ int main() {
 	std::vector<int> portVector;
 	int amountOfIps = 0;
 
-	std::cout << "Whats the file name that contains all of the ips. example: proxyList.txt\n";
 	std::string fileName{};
+	std::string proxiesProtocol{};
+
+	std::cout << "Whats the file name that contains all of the ips. example: proxyList.txt\n";
 	std::getline(std::cin, fileName);
 
-	std::cout << "Whats the type the protocol that all of the proxies are. The protocols are: http, https, socks4, socks4a, socks5\n";
-	std::string proxiesProtocol{};
-	std::getline(std::cin, proxiesProtocol);
+	do {
+		std::cout << "Whats the type the protocol that all of the proxies are. The protocols are: http, https, socks4, socks4a, socks5\n";
+		std::getline(std::cin, proxiesProtocol);
+	} while (proxiesProtocol != "http" && proxiesProtocol != "https" && proxiesProtocol != "socks4" && proxiesProtocol != "socks4a" && proxiesProtocol != "socks5");
 
 	std::cout << "---------------------------------------------------------------------------------------------------\n";// line breaker
 
@@ -193,4 +194,7 @@ int main() {
 	for (int i = 0; i < amountOfIps; i++) {
 		std::cout << checkProxyConnection(ipsVector.at(i), portVector.at(i), proxiesProtocol) << "\n";
 	}
+
+	std::cout << "Finished..... Press a letter to exit : ";
+	std::cin.get();
 }
