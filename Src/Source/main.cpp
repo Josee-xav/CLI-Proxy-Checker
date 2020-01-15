@@ -2,20 +2,20 @@
 #include <vector>
 #include <fstream>
 #include <string>
+#include <tuple>  
+#include <regex>
+
 
 #define CURL_STATICLIB
 #include <curl.h>
 
-/* proxyChecker couple of common responses that the function returns and its meannings.
-	 (ip) : (port) worked! <- worked fine
-	 (ip) : (port) Failed Reason : Couldn't connect to server. <- Failed to connect to host or proxy.
-	 (ip) : (port) Failed Reason : Failure when receiving data from the peer <- Failure with receiving network data.
-	 (ip) : (port) Failed TimedOut After 2 attempts of connecting.... <- it means that either the proxy is slow or unstable so the connection timed out. it may work but i wouldnt recomended using the proxy due to it probably being unstable..
-
-*/
-
-constexpr int AMOUNT_RETRY{ 2 };
-std::string buffer; // string used by writer function to save cURL
+namespace testedProxiesStats
+{
+	int working = 0;
+	int timedOut = 0;
+	int dead = 0;
+	std::vector<std::string> testedIpsWithDetails;
+}
 
 /*
 * This function gets called by libcurl as soon as there is data received that needs to be saved.
@@ -24,13 +24,21 @@ std::string buffer; // string used by writer function to save cURL
 * If that amount differs from the amount passed to your function, it'll signal an error to the library.
 * This will exit the transferand return CURLE_WRITE_ERROR.
 */
-static int writer(char* data, size_t size, size_t nmemb, std::string* buffer) {
+static int writer(char* data, size_t size, size_t nmemb, std::string* buffer)
+{
 	unsigned int result = 0;
-	if (buffer != NULL) {
+	if(buffer != NULL) {
 		buffer->append(data, size * nmemb);
 		result = size * nmemb;
 	}
 	return result;
+}
+
+inline void writeWorkingProxies(std::string workingProxy)
+{
+	std::ofstream workingProxyFile("WorkingProxies.txt", std::ios::app);
+
+	workingProxyFile << workingProxy << "\n";
 }
 
 /*checkProxyConnection
@@ -38,59 +46,61 @@ static int writer(char* data, size_t size, size_t nmemb, std::string* buffer) {
 
 	If the connection times out on the first loop then on the 2nd loop it will try again if it still times out then it will return ip + " : " + std::to_string(port) + " Failed TimedOut After 2 attempts of connecting...."
 */
-std::string checkProxyConnection(std::string ip, int port, std::string proxytype) {
+void checkProxyConnection(std::string ip, int port, std::string proxytype)
+{
+	std::string buffer; // string used by writer function to save cURL
+	CURL* curlHandle;
+	CURLcode curlResponse;
+	curlHandle = curl_easy_init();
 
-	for (int i = 0; i < AMOUNT_RETRY; i++) {
+	if(curlHandle) {
+		curl_easy_setopt(curlHandle, CURLOPT_URL, "https://www.google.com");
+		curl_easy_setopt(curlHandle, CURLOPT_FOLLOWLOCATION, true);
+		curl_easy_setopt(curlHandle, CURLOPT_TIMEOUT, 12L);
+		curl_easy_setopt(curlHandle, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:69.0) Gecko/20100101 Firefox/69.0");
 
-		CURL* curlHandle;
-		CURLcode curlResponse;
-		curlHandle = curl_easy_init();
+		// sets the proxyType
+		if(proxytype == "http")
+			curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
+		else if(proxytype == "https")
+			curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_HTTPS);
+		else if(proxytype == "socks4")
+			curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS4);
+		else if(proxytype == "socks5")
+			curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
 
-		if (curlHandle) {
-			curl_easy_setopt(curlHandle, CURLOPT_URL, "https://www.google.com");
-			curl_easy_setopt(curlHandle, CURLOPT_FOLLOWLOCATION, true);
-			curl_easy_setopt(curlHandle, CURLOPT_TIMEOUT, 12L);
-			curl_easy_setopt(curlHandle, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:69.0) Gecko/20100101 Firefox/69.0");
+		curl_easy_setopt(curlHandle, CURLOPT_PROXY, ip.c_str());
+		curl_easy_setopt(curlHandle, CURLOPT_PROXYPORT, port);
+		curl_easy_setopt(curlHandle, CURLOPT_WRITEFUNCTION, writer);
+		curl_easy_setopt(curlHandle, CURLOPT_WRITEDATA, &buffer);
 
-			// sets the proxyType
-			if (proxytype == "http")
-				curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
-			else if (proxytype == "https")
-				curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_HTTPS);
-			else if (proxytype == "socks4")
-				curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS4);
-			else if (proxytype == "socks4a")
-				curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS4A);
-			else if (proxytype == "socks5")
-				curl_easy_setopt(curlHandle, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
+		curlResponse = curl_easy_perform(curlHandle); // will perform the transfer as described in all of the options above
+		curl_easy_cleanup(curlHandle);
 
-			curl_easy_setopt(curlHandle, CURLOPT_PROXY, ip.c_str());
-			curl_easy_setopt(curlHandle, CURLOPT_PROXYPORT, port);
-			curl_easy_setopt(curlHandle, CURLOPT_WRITEFUNCTION, writer);
-			curl_easy_setopt(curlHandle, CURLOPT_WRITEDATA, &buffer);
+		if(curlResponse != CURLE_OPERATION_TIMEDOUT) {
+			if(curlResponse == CURLE_OK) {
+				if(sizeof(buffer) > 0) {// receviced data thats greater than 0. meaning that the connection went though
+					writeWorkingProxies(ip + " : " + std::to_string(port));
 
-			curlResponse = curl_easy_perform(curlHandle); // will perform the transfer as described in all of the options above
-			curl_easy_cleanup(curlHandle);
-
-			if (curlResponse != CURLE_OPERATION_TIMEDOUT) {
-				if (curlResponse == CURLE_OK) {
-					if (sizeof(buffer) > 0) {// receviced data thats greater than 0. meaning that the connection went though
-						return  ip + " : " + std::to_string(port) + " worked!";
-					}
+					testedProxiesStats::working++;
+					testedProxiesStats::testedIpsWithDetails.push_back(ip + " : " + std::to_string(port) + " worked!");
 				}
-				else {
-					return ip + " : " + std::to_string(port) + " Failed Reason : " + static_cast<std::string>(curl_easy_strerror(curlResponse));
-				}
+			}
+			else {
+				testedProxiesStats::dead++;
+				testedProxiesStats::testedIpsWithDetails.push_back(ip + " : " + std::to_string(port) + " Failed Reason : " + static_cast<std::string>(curl_easy_strerror(curlResponse)));
 			}
 		}
 		else {
-			std::cout << "The Curl handle Failed! Press a letter to exit\n"; // error
-			std::cin.get();
-			exit(1);
+			testedProxiesStats::timedOut++;
+			testedProxiesStats::testedIpsWithDetails.push_back(ip + " : " + std::to_string(port) + " Failed Reason: Connection Timed out");
 		}
-
 	}
-	return ip + " : " + std::to_string(port) + " Failed TimedOut After 2 attempts of connecting...."; // retry didnt work
+	else {
+		std::cout << "The Curl handle Failed! Press a letter to exit\n"; // error
+		std::cin.get();
+		exit(1);
+	}
 }
 
 /* readTextFile
@@ -98,82 +108,65 @@ std::string checkProxyConnection(std::string ip, int port, std::string proxytype
 	The fileName will be used so it can read the IP's and the port of that ip and then puts it puts that data into one of the vectors so the IPS will go to
 	string vector "p_ips" and the ports will go to a int vector called "p_port"
 
-	Variables are:
-	p_fileName is the user fileName.
-	p_amountOfIps is a referenced variable that counts the amount of ips they are.
-	p_ips is the storage for all of the ips(not including ports).
-	p_port is the storage for all of the ports.
+	parameter:
+	p_fileName is the filename that you want to read from
 
+	Return:
+	Returns a tuple of std::string vector and a vector of ints :)
 */
-void readTextFile(std::string p_fileName, int& p_amountOfIps, std::vector<std::string>& p_ips, std::vector<int>& p_ports) {
+std::tuple<std::vector<std::string>, std::vector<int>> readTextFile(std::string p_fileName)
+{
+	std::regex regexPort("^[0-9]+$");
+	std::regex regexIp("^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$");
 
 	std::ifstream rFile(p_fileName);
 
 	// If we couldn't open the output file stream for reading
-	if (!rFile) {
+	if(!rFile) {
 		std::cerr << "Uh oh, File: " << p_fileName << " could not be opened for reading! Press a letter to exit" << std::endl;
 		std::cin.get();
 		exit(1);
 	}
+	std::vector<std::string>ips;
+	std::vector<int>ports;
 
-	bool foundColon = false;
-	std::string bufferIP{};
-	std::string bufferPort{};
-	char c;
-	while (rFile.get(c))
-	{
+	while(rFile) {
+		std::string stringPort;
+		std::string ip;
+		std::getline(rFile, ip, ':');
+		std::getline(rFile, stringPort);
 
-		if (c != '\n') {
-
-			if (c == ':') {
-				foundColon = true;
-			}
-			else if (isdigit(c) || c == '.') { // checks if the character that its trying to input into the buffers is a number or is '.'
-				if (foundColon != true) {
-					bufferIP += c;
-				}
-				else {
-					bufferPort += c;
-				}
-			}
-			else {
-				std::cout << "Error File fomatting aint right. To fix this\n";
-				std::cout << "You need to make sure each line has formatting like this example: 1.1.1.1.1:6666.... Press a letter to exit\n";
-				std::cin.get();
-				exit(1);
-			}
-
-		}
-		else {
-			int portt;
-			try {
-				portt = std::stoi(bufferPort); // converts the string that contains the port
-			}
-			catch (std::invalid_argument) { // this exception may happen if you have formatted ur file wrong. like an empty line in ur txt file
-				std::cout << "You probably have a empty line in your proxy list file. please remove it before using this. Press a letter to exit\n";
-				std::cin.get();
-				exit(1);
-			}
-
-			p_ips.push_back(bufferIP); // pushes the found IP into the vector
-
-			p_ports.push_back(portt); // pushes the found PORT into the vecotr
-
-			p_amountOfIps++;
-
-			bufferIP = {};
-			bufferPort = {};
-			foundColon = false;
+		if(std::regex_match(ip, regexIp)) {
+			std::cout << "worked : " << ip << "\n";
+			ips.push_back(ip);
 		}
 
+		if(std::regex_match(stringPort, regexPort))
+			ports.push_back(std::stoi(stringPort));
 	}
-	rFile.close();
+	return std::make_tuple(ips, ports);
 }
 
-int main() {
+void drawProxyWorkingGrid()
+{
+	system("cls");
+
+	std::cout << "-- Working\n";
+	std::cout << testedProxiesStats::working;
+	std::cout << "\n-- TimedOut\n";
+	std::cout << testedProxiesStats::timedOut;
+	std::cout << "\n-- Not Working\n";
+	std::cout << testedProxiesStats::dead;
+
+	std::cout << "\n-- IPS TESTED\n";
+	for(int i = 0; i < testedProxiesStats::testedIpsWithDetails.size(); i++)
+		std::cout << testedProxiesStats::testedIpsWithDetails.at(i) << ", " << i << "\n";
+}
+
+int main()
+{
 	std::vector<std::string> ipsVector;
 	std::vector<int> portVector;
-	int amountOfIps = 0;
 
 	std::string fileName{};
 	std::string proxiesProtocol{};
@@ -182,17 +175,15 @@ int main() {
 	std::getline(std::cin, fileName);
 
 	do {
-		std::cout << "Whats the type the protocol that all of the proxies are. The protocols are: http, https, socks4, socks4a, socks5\n";
+		std::cout << "Whats the type the protocol that all of the proxies are. The protocols are: http, https, socks4, socks5\n";
 		std::getline(std::cin, proxiesProtocol);
-	} while (proxiesProtocol != "http" && proxiesProtocol != "https" && proxiesProtocol != "socks4" && proxiesProtocol != "socks4a" && proxiesProtocol != "socks5");
+	} while(proxiesProtocol != "http" && proxiesProtocol != "https" && proxiesProtocol != "socks4" && proxiesProtocol != "socks5");
 
-	std::cout << "---------------------------------------------------------------------------------------------------\n";// line breaker
+	std::tie(ipsVector, portVector) = readTextFile(fileName);
 
-	readTextFile(fileName, amountOfIps, ipsVector, portVector);
-
-	std::cout << "Found " << amountOfIps << " ips\n";
-	for (int i = 0; i < amountOfIps; i++) {
-		std::cout << checkProxyConnection(ipsVector.at(i), portVector.at(i), proxiesProtocol) << "\n";
+	for(int i = 0; i < ipsVector.size(); i++) {
+		checkProxyConnection(ipsVector.at(i), portVector.at(i), proxiesProtocol);
+		drawProxyWorkingGrid();
 	}
 
 	std::cout << "Finished..... Press a letter to exit : ";
