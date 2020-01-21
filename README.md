@@ -1,5 +1,6 @@
 # CLI-Proxy-Checker
 Proxy connection checker /  proxy checker
 
-WIP
-Trying to make the application faster in terms of testing the proxys 
+## Why i made this.
+
+I made this because i wanted to learn libcurl and multi threading :)
