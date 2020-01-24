@@ -3,12 +3,13 @@
 #include <vector>
 #include <fstream>
 #include <string>
-#include <tuple>  
-#include <regex>
+#include <cstdlib> 
+#include <mutex>
 
 #define CURL_STATICLIB
 #include <curl.h>
-#include <mutex>
+
+#define WORKING_PROXIES_FILE "WorkingProxies.txt"
 
 class ProxyTester
 {
@@ -16,15 +17,20 @@ public:
 	ProxyTester(std::string protocol);
 	void checkProxyConnection(std::string ip, int port);
 
-	std::string getTestedIpDetails(int pos);
+	inline int getWorkingProxyStat()
+	{
+		return workingProxies;
+	}
 
-	int getWorkingProxyStat();
+	inline int getDeadProxyStat()
+	{
+		return deadProxies;
+	}
 
-
-	int getDeadProxyStat();
-
-
-	int getTimedOutProxyStat();
+	inline int getTimedOutProxyStat()
+	{
+		return timedOutProxies;
+	}
 
 private:
 	/*
@@ -39,15 +45,19 @@ private:
 	// writes the working proxy to a file called WorkingProxies.txt
 	inline void writeWorkingProxies(std::string workingProxy)
 	{
-		std::ofstream workingProxyFile("WorkingProxies.txt", std::ios::app);
+		std::ofstream workingProxyFile(WORKING_PROXIES_FILE, std::ios::app);
 
+		if(!workingProxyFile) {
+			std::cerr << "A file could not be opened!\n";
+			exit(1);
+		}
 		workingProxyFile << workingProxy << "\n";
 	}
+
 	int workingProxies;
 	int timedOutProxies;
 	int deadProxies;
 
-	std::vector<std::string> testedIpsWithDetails;
 	std::string proxyProtocol;
 };
 

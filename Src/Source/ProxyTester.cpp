@@ -1,9 +1,9 @@
 #include "ProxyTester.h"
-#include <mutex>
 
 ProxyTester::ProxyTester(std::string protocol) :workingProxies(0), timedOutProxies(0), deadProxies(0), proxyProtocol(protocol)
 {
 }
+
 std::mutex g_i_mutex;
 
 void ProxyTester::checkProxyConnection(std::string ip, int port)
@@ -42,58 +42,29 @@ void ProxyTester::checkProxyConnection(std::string ip, int port)
 		if(curlResponse != CURLE_OPERATION_TIMEDOUT) {
 			if(curlResponse == CURLE_OK) {
 				if(sizeof(buffer) > 0) {// receviced data thats greater than 0. meaning that the connection went though
+					std::lock_guard<std::mutex> guard(g_i_mutex);// locks the thread until it gets out of scope
 					writeWorkingProxies(ip + " : " + std::to_string(port));
-
-					printf("ip:%s,  %s", ip.c_str(), "worked\n");
-
 					workingProxies++;
-					testedIpsWithDetails.push_back(ip + " : " + std::to_string(port) + " worked!");
+					printf("%s : %d,   Worked!\n", ip.c_str(), port);
 				}
 			}
 			else {
-				printf("ip:%s,  %s", ip.c_str(), "dead\n");
-				{
-					std::lock_guard<std::mutex> guard(g_i_mutex);
-					deadProxies++;
-					testedIpsWithDetails.push_back(ip + " : " + std::to_string(port) + " Failed Reason : " + static_cast<std::string>(curl_easy_strerror(curlResponse)));
-				}
+				std::lock_guard<std::mutex> guard(g_i_mutex); // locks the thread until it gets out of scope
+				deadProxies++;
+				printf("%s : %d, Failed Reason: %s\n", ip.c_str(), port, curl_easy_strerror(curlResponse));
 			}
 		}
 		else {
-			printf("ip:%s,  %s", ip.c_str(), "timedoutpr\n");
-			{
-				std::lock_guard<std::mutex> guard(g_i_mutex);
-				timedOutProxies++;
-				testedIpsWithDetails.push_back(ip + " : " + std::to_string(port) + " Failed Reason: Connection Timed out");
-			}
+			std::lock_guard<std::mutex> guard(g_i_mutex); // locks the thread until it gets out of scope
+			timedOutProxies++;
+			printf("%s : %d Failed Reason: Connection Timed out\n", ip.c_str(), port);
 		}
 		curl_easy_cleanup(curlHandle);
 	}
 	else {
-		std::cout << "The Curl handle Failed! Press a letter to exit\n"; // error
-		//std::cin.get();
+		std::cout << "The Curl handle Failed! Press a letter to exit\n";
 		exit(1);
 	}
-}
-
-std::string ProxyTester::getTestedIpDetails(int pos)
-{
-	return testedIpsWithDetails.at(pos);
-}
-
-int ProxyTester::getWorkingProxyStat()
-{
-	return workingProxies;
-}
-
-int ProxyTester::getDeadProxyStat()
-{
-	return deadProxies;
-}
-
-int ProxyTester::getTimedOutProxyStat()
-{
-	return timedOutProxies;
 }
 
 int ProxyTester::writer(char* data, size_t size, size_t nmemb, std::string* buffer)

@@ -16,12 +16,12 @@ public:
 	{
 	}
 
-	void reset()
+	inline void reset()
 	{
 		m_beg = clock_t::now();
 	}
 
-	double elapsed() const
+	inline double elapsed() const
 	{
 		return std::chrono::duration_cast<second_t>(clock_t::now() - m_beg).count();
 	}
