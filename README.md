@@ -1,4 +1,4 @@
-# CLI-Proxy-Checker WIP
+# CLI-Proxy-Checker
 Proxy connection checker /  proxy checker
 
 ## Why i made this.
